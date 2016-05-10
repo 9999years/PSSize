@@ -24,7 +24,7 @@ function Measure-Unit {
 	If Measure-Unit is called with -Lower, the lower unit will be used if there would be only 1 of the higher unit. E.g. 1048576 = 1mb would return kb rather than mb.
 
 .PARAMETER BytesText
-	By default, values >1024 will have no unit text. However, BytesText can specify an optional text.
+	By default, values >1024 will have no unit text. However, todo
 
 .PARAMETER Uppercase
 	Aliased as "Caps" and "Capital". If Measure-Unit is called with -Uppercase, text will be in uppercase. E.g. "MB" instead of "mb"
@@ -46,7 +46,7 @@ function Measure-Unit {
 
 			[Switch]$Lower = $False,
 
-			[String]$BytesText = "",
+			[Switch]$BytesText = $False,
 
 			[Alias("Capital", "Caps")]
 			[Switch]$Uppercase = $False,
@@ -67,7 +67,7 @@ function Measure-Unit {
 		If( $Size -lt 1kb )
 		{
 			$Unit = 1
-			$UnitText = $BytesText
+			$UnitText = ""
 		}
 		ElseIf( $Size -lt 1mb )
 		{
@@ -93,22 +93,19 @@ function Measure-Unit {
 			$UnitText = "tera"
 		}
 
-		If( $Long -and (-not ($Size -lt 1kb -and $BytesText) ))
+		If( $Long )
 		{
 			#if we want longer units, add "bytes" unless
 			#called with -BytesText, in which case skip
-			$UnitText += "$(if( $BytesText )
-			{
-				$BytesText
-			}
-			else
-			{
-				'bytes'
-			})"
+			$UnitText += "bytes"
 		}
-		ElseIf( ! ($Long -and $Size -lt 1kb) )
+		ElseIf( ! ($Size -lt 1kb) )
 		{
 			$UnitText = "$($UnitText[0])b"
+		}
+		ElseIf( $BytesText )
+		{
+			$UnitText = "b"
 		}
 
 		#if called with -Uppercase make it uppercase
