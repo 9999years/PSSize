@@ -92,16 +92,47 @@ function Format-Unit
 
 function Get-Size
 {
-	$Items = (Get-ChildItem $args | Measure-Object -property length -sum)
+	[CmdletBinding()]
+	Param(
+			[Parameter(
+				 Position=0
+				,ValueFromPipeline=$True
+				)
+			]
+			[String]$PathSpec = ".\",
+			[Switch]$help = $False
+		 )
 
-	If( $Items.Count -eq 0 )
-	{ #no items
-		"Item not found!"
+	if($help)
+	{
+		"Takes in a path-spec like .\ or l* and returns the cumulative"
+		"sum of the sizes of all files (and folders and sub-folders)"
+		"that match that path"
+		"`n`rExample usage:"
+		"PS>Get-Size"
+		"10.36 kb"
+		"`n`rPS>Get-Size -Verbose"
+		"VERBOSE: The cumulative size of all 5 files matching .\"
+		"VERBOSE: C:\Users\user\Documents\PowerShell Modules\size\size.ps1 C:\Users\user\Documents\PowerShell Modules\size\size.psd1 C:\Users\user\Documents\PowerShell Modules\size\size.psm1"
+		"VERBOSE: (average of 2.59 kb / file)"
+		"10.36 kb"
+		return
 	}
-	ElseIf( $Items.Count -gt 1 )
-	{ #single item
-		$Items = (Get-ChildItem $args -recurse | Measure-Object -property length -sum)
+
+	if( !(Test-Path $PathSpec) )
+	{
+		"Error: Nothing matches that path."
+		return
 	}
+
+	$Items = (Get-ChildItem $PathSpec -recurse | Measure-Object -property length -sum)
+
+	Write-Verbose "The cumulative size of all $($Items.Count) file$(if($Items.Count -ne 1){'s'}) matching $($PathSpec)"
+
+	Write-Verbose ([String](Get-ChildItem $PathSpec -recurse))
 	$Average = $Items.sum/$Items.count
-	"$(Format-Unit $Items.sum) in $($Items.Count) file$(if($Items.Count -ne 1){'s'})"
+	Write-Verbose "(average of $(Format-Unit $Average) / file)"
+
+	"$(Format-Unit $Items.sum)"
+
 }
