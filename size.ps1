@@ -100,14 +100,19 @@ function Get-Size
 				)
 			]
 			[String]$PathSpec = ".\",
-			[Switch]$help = $False
+
+			[Switch]$help = $False,
+
+			[alias("All")]
+			[Switch]$Force = $False
 		 )
 
 	if($help)
 	{
-		"Takes in a path-spec like .\ or l* and returns the cumulative"
+		"Takes in a path-spec (default `".\`") like .\ or l* and returns the cumulative"
 		"sum of the sizes of all files (and folders and sub-folders)"
 		"that match that path"
+		"Accepts -Verbose and -All"
 		"`n`rExample usage:"
 		"PS>Get-Size"
 		"10.36 kb"
@@ -125,11 +130,11 @@ function Get-Size
 		return
 	}
 
-	$Items = (Get-ChildItem $PathSpec -recurse | Measure-Object -property length -sum)
+	$Items = iex "(Get-ChildItem $PathSpec -recurse $(if( $Force ){`"-Force`"}) | Measure-Object -property length -sum)"
 
 	Write-Verbose "The cumulative size of all $($Items.Count) file$(if($Items.Count -ne 1){'s'}) matching $($PathSpec)"
 
-	Write-Verbose ([String](Get-ChildItem $PathSpec -recurse))
+	Write-Verbose (iex "([String](Get-ChildItem $PathSpec -recurse $(if( $Force ){`"-Force`"})))")
 	$Average = $Items.sum/$Items.count
 	Write-Verbose "(average of $(Format-Unit $Average) / file)"
 
