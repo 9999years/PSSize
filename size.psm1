@@ -1,4 +1,3 @@
-function Measure-Unit {
 <#
 .SYNOPSIS
 	Gives the appropriate unit for any byte amount
@@ -6,14 +5,13 @@ function Measure-Unit {
 .DESCRIPTION
 	Takes in a list of numbers (of bytes) and returns an array of the appropriate unit for each value, with each element having a Text (a string like "mb" or "kb") and Unit (an int like 1024 or 1048576) key.
 	Note that the default unit text for "bytes" is "", as bytes are usually written plain.
-	If only one number is passed in, only the object will be returned (not in an array).
 	Accepts pipeline input.
 
 .PARAMETER Units
 	An array of int values to be processed. Implicit in unnamed arguments if not specified.
 
 .PARAMETER RoundDown
-	Aliased as "Lower". If Measure-Unit is called with -RoundDown, the lower unit will be used if there would be only 1 of the higher unit. E.g. 1048576 = 1mb would return kb rather than mb.
+	Aliased as "Lower". If Measure-Unit is called with -RoundDown, the lower unit will always be used. E.g. 1576 would return kb rather than b.
 
 .PARAMETER BytesText
 	By default, values >1024 will have no unit text. However, if -BytesText is passed, the unit text for bytes will be "b" (or "bytes" if passed in tandem with -Long).
@@ -70,7 +68,8 @@ function Measure-Unit {
 	Text                           B
 	Unit                           1
 #>
-
+function Measure-Unit
+{
 	[CmdletBinding()]
 	Param(
 			#get unnamed params for units
@@ -81,7 +80,7 @@ function Measure-Unit {
 				ValueFromPipeline=$True
 				)
 			]
-			[Int[]]$Units,
+			[UInt64[]]$Units,
 
 			[Alias("Lower")]
 			[Switch]$RoundDown = $False,
@@ -103,11 +102,11 @@ function Measure-Unit {
 
 		ForEach( $Size in [Array]$Units )
 		{
-			$Size -= [Int][Bool]$RoundDown
-			#dirty hack
-			#if the value is lower by 1, lower unit is returned
-			#cast to bool to int, $true = 1, $false = 0
-			#definitely cleaner than an if() but possibly less... good
+
+			If( $RoundDown )
+			{
+				$Size /= 1024
+			}
 
 			#test units
 			If( $Size -lt 1kb )
@@ -138,7 +137,13 @@ function Measure-Unit {
 				$Unit = 1tb
 				$UnitText = "tera"
 			}
-
+			Else
+			{
+				#for future-compatibility with 2044
+				$Unit = 1024pb
+				$UnitText = "exa"
+			}
+			
 			If( $Long )
 			{
 				#if we want longer units, add "bytes"
@@ -177,52 +182,69 @@ function Measure-Unit {
 	}
 }
 
-function Format-Unit
-{
 <#
-	If( $help -or ! $Amounts)
-	{
-		"Takes in a list of numbers (of bytes) and returns an array"
-		"of the appropriately formatted units for each value"
-		"`n`rExample usage:"
-		"PS>Format-Unit 100 1500 1500000"
-		"[0]: 100"
-		"[1]: 1.46kb"
-		"[2]: 1.43mb"
-		return
-	}
 .SYNOPSIS
-	Gives the appropriate unit for any byte amount
+	Gives the appropriately formatted number for any byte amount
 
 .DESCRIPTION
-	Takes in a list of numbers (of bytes) and returns an array of the appropriate unit for each value, with each element having a Text (a string like "mb" or "kb") and Unit (an int like 1024 or 1048576) key.
+	Takes in an array of int values of bytes and returns properly formatted units, like 1.54 mb.
 	Note that the default unit text for "bytes" is "", as bytes are usually written plain.
 	If only one number is passed in, only the object will be returned (not in an array).
 	Accepts pipeline input.
+	Note that byte values greater than 18446744073709551615 = 16 exabytes will not fit into a UInt64 and will cause a casting error.
 
 .PARAMETER Units
 	An array of int values to be processed. Implicit in unnamed arguments if not specified.
 
 .PARAMETER RoundDown
-	Aliased as "Lower". If Measure-Unit is called with -RoundDown, the lower unit will be used if there would be only 1 of the higher unit. E.g. 1048576 = 1mb would return kb rather than mb.
+	Aliased as "Lower". If Measure-Unit is called with -RoundDown, the lower unit will always be used. E.g. 1900000 would return 1,855.47 kb rather than 1.81 mb.
 
 .PARAMETER BytesText
 	By default, values >1024 will have no unit text. However, if -BytesText is passed, the unit text for bytes will be "b" (or "bytes" if passed in tandem with -Long).
 
 .PARAMETER UpperCase
-	Aliased as "Caps" and "Capital". If Measure-Unit is called with -UpperCase, text will be in uppercase. E.g. "MB" instead of "mb".
+	Aliased as "Caps" and "Capital". If Measure-Unit is called with -UpperCase, unit text will be in uppercase. E.g. "MB" instead of "mb".
 
 .PARAMETER TitleCase
 	Capitalizes the first letter of each unit. Overriden by -UpperCase if both are passed.
 
 .PARAMETER Long
-	Enables un-abbreviated output, E.g. "10 kilobytes" instead of "10 kb".
+	Enables un-abbreviated unit text output, E.g. "10 kilobytes" instead of "10 kb".
+
+.PARAMETER FormatString
+	A number formatting string, such as "D", "X", or "P". See msdn.microsoft.com/en-us/library/26etazsy.aspx for more information and a list of valid format strings.
+	Note that if -FormatString is "X" the value will be rounded to the nearest integer.
+
+.PARAMETER PrefixString
+	A string to prefix the units with. If -FormatString is set to "X", -PrefixString will default to "0x"
 
 .COMPONENT
 	Measure-Unit
 
-#>
+.EXAMPLE
+	19999 | Format-Unit -Decimals 4 -Capital -Long
+	19.5303 KILOBYTES
 
+.EXAMPLE
+	Format-Unit 1000 -ExtraByteDigits -Decimals 1 -BytesText
+	1,000.0 b
+
+.EXAMPLE
+	Format-Unit 1024 -RoundDown -Long -TitleCase
+	1,024 Bytes
+
+.EXAMPLE
+	 @(1025, 9999, 108085) | Format-Unit -Decimals 4
+	105.5518 kb
+
+.EXAMPLE
+	Format-Unit @(5777, 233, 89999) -BytesText -FormatString "X" -NoSpace
+	0x6kb
+	0xE9b
+	0x58kb
+#>
+function Format-Unit
+{
 	[CmdletBinding()]
 	Param(
 			[Parameter(
@@ -232,7 +254,7 @@ function Format-Unit
 				Mandatory = $True
 				)
 			]
-			[String[]]$Amounts,
+			[System.UInt64[]]$Amounts,
 
 			[Int]$Decimals = 2,
 
@@ -250,37 +272,53 @@ function Format-Unit
 
 			[Switch]$Long = $False,
 
-			[Switch]$NoSpace = $False
+			[Switch]$NoSpace = $False,
+
+			[Char]$FormatString = "N",
+
+			[String]$PrefixText
 		 )
 
-	$OutItems = New-Object System.Collections.ArrayList
-	[Array] $Units = Invoke-Expression "Measure-Unit $Amounts $(
-		if($RoundDown) { "-RoundDown " }
-		if($BytesText) { "-BytesText " }
-		if($UpperCase) { "-UpperCase " }
-		if($TitleCase) { "-TitleCase " }
-		if($Long) { "-Long "}
-		)"
-
-	ForEach( $i in 0..($Amounts.Count - 1) )
+	Process
 	{
-		If($Units[$i].Unit -eq 1 -and ! $ExtraByteDigits) {
-			#Would be kinda weird to show 12.00 bytes
-			$TempDecimals = 0
-		}
-		Else
-		{
-			$TempDecimals = $Decimals
-		}
+		$OutItems = New-Object System.Collections.ArrayList
+		[Array]$Units = Invoke-Expression "Measure-Unit $Amounts $(
+			if($RoundDown) { "-RoundDown " }
+			if($BytesText) { "-BytesText " }
+			if($UpperCase) { "-UpperCase " }
+			if($TitleCase) { "-TitleCase " }
+			if($Long) { "-Long "}
+			)"
 
-		$OutItems.Add(
-			"{0:N$($TempDecimals)}$(
-			if( ! $NoSpace ) { " " }
-			)$($Units[$i].Text)" -f
-			($Amounts[$i] / $Units[$i].Unit)
-			) > $null
+		ForEach( $i in 0..($Amounts.Count - 1) )
+		{
+			If($Units[$i].Unit -eq 1 -and ! $ExtraByteDigits) {
+				#Would be kinda weird to show 12.00 bytes
+				$TempDecimals = 0
+			}
+			Else
+			{
+				$TempDecimals = $Decimals
+			}
+
+			$TempAmount = ($Amounts[$i] / $Units[$i].Unit)
+
+			If(([String]$FormatString).ToUpper() -eq "X")
+			{
+				$PrefixString = "0x"
+				$TempDecimals = $Null
+				$TempAmount = [int]$TempAmount
+			}
+
+			$OutItems.Add(
+				"$($PrefixString){0:$($FormatString)$($TempDecimals)}$(
+				if( ! $NoSpace ) { " " }
+				)$($Units[$i].Text)" -f
+				$TempAmount
+				) > $null
+		}
+		return $OutItems
 	}
-	return $OutItems
 }
 
 function Get-Size
