@@ -326,50 +326,76 @@ function Get-Size
 	[CmdletBinding()]
 	Param(
 			[Parameter(
-				 Position=0
-				,ValueFromPipeline=$True
-				,ValueFromRemainingArguments = $True
+				Position = 0,
+				ValueFromRemainingArguments = $True,
+				ValueFromPipeline = $True,
+				Mandatory = $True
 				)
 			]
 			[String]$PathSpec = ".\",
 
-			[Switch]$help = $False,
+			[Int]$Decimals = 2,
 
-			[alias("All")]
-			[Switch]$Force = $False
+			[Switch]$ExtraByteDigits = $False,
+
+			[Alias("Lower")]
+			[Switch]$RoundDown = $False,
+
+			[Switch]$BytesText = $False,
+
+			[Alias("Capital", "Caps")]
+			[Switch]$UpperCase = $False,
+
+			[Switch]$TitleCase = $False,
+
+			[Switch]$Long = $False,
+
+			[Switch]$NoSpace = $False,
+
+			[Char]$FormatString = "N",
+
+			[String]$PrefixText
 		 )
 
-	if($help)
+	Process
 	{
-		"Takes in a path-spec (default `".\`") like .\ or l* and returns the cumulative"
-		"sum of the sizes of all files (and folders and sub-folders)"
-		"that match that path"
-		"Accepts -Verbose and -All"
-		"`n`rExample usage:"
-		"PS>Get-Size"
-		"10.36 kb"
-		"`n`rPS>Get-Size -Verbose"
-		"VERBOSE: The cumulative size of all 5 files matching .\"
-		"VERBOSE: C:\Users\user\Documents\PowerShell Modules\size\size.ps1 C:\Users\user\Documents\PowerShell Modules\size\size.psd1 C:\Users\user\Documents\PowerShell Modules\size\size.psm1"
-		"VERBOSE: (average of 2.59 kb / file)"
-		"10.36 kb"
-		return
+		if( !(Test-Path $PathSpec) )
+		{
+			Write-Error "Error: Nothing matches that path."
+			return
+		}
+
+		$Sizes = New-Object System.Collections.ArrayList
+		$Items = New-Object System.Collections.ArrayList
+
+		ForEach($Path in $PathSpec)
+		{
+			$Items.Add(
+				Invoke-Expression ( "Get-ChildItem $Path -Recurse $(
+					If($Force) { `"-Force`" }
+					) | Measure-Object -Property Length -Sum" )
+				)
+		}
+
+		$Total = Invoke-Expression "Format-Unit $($Items.Sum) $(
+			if($Decimals -ne 2) { "-Decimals $Decimals " }
+			if($RoundDown) { "-RoundDown " }
+			if($BytesText) { "-BytesText " }
+			if($UpperCase) { "-UpperCase " }
+			if($TitleCase) { "-TitleCase " }
+			if($Long) { "-Long " }
+			if($ExtraByteDigits) { "-ExtraByteDigits " }
+			if($NoSpace) { "-NoSpace " }
+			if($FormatString -ne "N") { "-FormatString $FormatString " }
+			if($PrefixText -ne $Null) { "-PrefixText $PrefixText " }
+			)"
+
+		Write-Verbose "The cumulative size of all $($Items.Count) file$(if($Items.Count -ne 1){'s'}) matching ``$($PathSpec -Join -`"``, ```")``:"
+
+		Write-Verbose (Invoke-Expression "([String](Get-ChildItem $PathSpec -recurse $(if( $Force ){`"-Force`"})))")
+		$Average = $Items.sum/$Items.count
+		Write-Verbose "(average of $(Format-Unit $Average) / file)"
+
+		"$(Format-Unit $Items.sum)"
 	}
-
-	if( !(Test-Path $PathSpec) )
-	{
-		"Error: Nothing matches that path."
-		return
-	}
-
-	$Items = Invoke-Expression "(Get-ChildItem $PathSpec -recurse $(if( $Force ){`"-Force`"}) | Measure-Object -property length -sum)"
-
-	Write-Verbose "The cumulative size of all $($Items.Count) file$(if($Items.Count -ne 1){'s'}) matching $($PathSpec)"
-
-	Write-Verbose (Invoke-Expression "([String](Get-ChildItem $PathSpec -recurse $(if( $Force ){`"-Force`"})))")
-	$Average = $Items.sum/$Items.count
-	Write-Verbose "(average of $(Format-Unit $Average) / file)"
-
-	"$(Format-Unit $Items.sum)"
-
 }
