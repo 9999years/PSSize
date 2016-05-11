@@ -254,7 +254,7 @@ function Format-Unit
 				Mandatory = $True
 				)
 			]
-			[System.UInt64[]]$Amounts,
+			[UInt64[]]$Amounts,
 
 			[Int]$Decimals = 2,
 
