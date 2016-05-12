@@ -363,44 +363,8 @@ function Get-Size
 		$Items = New-Object System.Collections.ArrayList
 		$Files = New-Object System.Collections.ArrayList
 		[Int]$ItemCount = 0
-	}
 
-	Process{
-		While($PathSpec.Count -eq 1)
-		{
-			$PathSpec = $PathSpec[0]
-		}
-
-		ForEach($Path in $PathSpec)
-		{
-			Write-Verbose "ForEach loop"
-			if( !(Test-Path $Path) )
-			{
-				Write-Warning "Nothing matches path ``$Path``"
-				continue
-			}
-
-			Write-Verbose ($Path | Out-String)
-
-			Write-Verbose $Files.Add(
-				( Invoke-Expression ( "Get-ChildItem $Path -Recurse $(
-					If($Force) { `"-Force`" }
-					)" ) ) )
-			Write-Verbose $Items.Add(
-				( $Files[-1] | Measure-Object -Property Length -Sum )
-				)
-			Write-Verbose ($ItemCount += $Items[-1].Count)
-		}
-	}
-
-	End{
-		Write-Verbose "End block"
-		#If($Items -eq $Null)
-		#{
-			#Write-Warning "No files found"
-		#}
-
-		$Total = Invoke-Expression "Format-Unit $($Items.Sum) $(
+		$FormatUnitOptions = "$(
 			if($Decimals -ne 2) { "-Decimals $Decimals " }
 			if($RoundDown) { "-RoundDown " }
 			if($BytesText) { "-BytesText " }
@@ -410,12 +374,46 @@ function Get-Size
 			if($ExtraByteDigits) { "-ExtraByteDigits " }
 			if($NoSpace) { "-NoSpace " }
 			if($FormatString -ne "N") { "-FormatString $FormatString " }
-			if($PrefixText -ne '') { #Write-Output "hio"
-				"-PrefixText $PrefixText " }
+			if($PrefixText -ne '') { "-PrefixText $PrefixText " }
 			)"
+	}
+
+	Process{
+		While($PathSpec.Count -eq 1 -xor $PathSpec[0].Count -eq 1)
+		{
+			$PathSpec = $PathSpec[0]
+		}
+
+		ForEach($Path in $PathSpec)
+		{
+			if( !(Test-Path $Path) )
+			{
+				Write-Warning "Nothing matches path ``$Path``"
+				continue
+			}
+
+			$Files.Add(
+				( Invoke-Expression ( "Get-ChildItem $Path -Recurse $(
+					If($Force) { `"-Force`" }
+					)" ) ) ) > $Null
+			$Items.Add(
+				( $Files[-1] | Measure-Object -Property Length -Sum )
+				) > $Null
+			$ItemCount += $Items[-1].Count
+		}
+	}
+
+	End{
+		#If($Items -eq $Null)
+		#{
+			#Write-Warning "No files found"
+		#}
+
+		$TotalAmount = ($Items.Sum | Measure-Object -sum).Sum
+		Write-Verbose "Total bytes: $TotalAmount"
 
 		Write-Verbose "The cumulative size of all $($ItemCount) file$(if($ItemCount -ne 1){'s'}) matching ``$(
-		$PathSpec -Join ", "
+			$PathSpec -Join ("$([char]0x60), $([char]0x60)")
 		)``:"
 
 		#Write-Verbose (Invoke-Expression "((Get-ChildItem $PathSpec -recurse $(if( $Force ){`"-Force`"})))")
@@ -430,9 +428,10 @@ function Get-Size
 			Expression = {$_.Name};
 			Alignment = "Left"
 		} | Out-String | Write-Verbose
-		$Average = ([Int]$Items.Sum)/$ItemCount
-		Write-Verbose "(average of $(Format-Unit $Average) / file)"
 
-		"$(Format-Unit $Items.sum)"
+		$Average = $TotalAmount / $ItemCount
+		Write-Verbose "(average of $(Invoke-Expression "Format-Unit $Average $FormatUnitOptions") / file)"
+
+		Write-Output (Invoke-Expression "Format-Unit $TotalAmount $FormatUnitOptions")
 	}
 }
