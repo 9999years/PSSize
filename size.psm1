@@ -321,6 +321,67 @@ function Format-Unit
 	}
 }
 
+<#
+.SYNOPSIS
+	Gives the appropriately formatted number for any byte amount
+
+.DESCRIPTION
+	Takes in an array of path values, sums all the file sizes and their
+	Note that the default unit text for "bytes" is "", as bytes are usually written plain.
+	If only one number is passed in, only the object will be returned (not in an array).
+	Accepts pipeline input.
+	Note that byte values greater than 18446744073709551615 = 16 exabytes will not fit into a UInt64 and will cause a casting error.
+
+.PARAMETER Units
+	An array of int values to be processed. Implicit in unnamed arguments if not specified.
+
+.PARAMETER RoundDown
+	Aliased as "Lower". If Measure-Unit is called with -RoundDown, the lower unit will always be used. E.g. 1900000 would return 1,855.47 kb rather than 1.81 mb.
+
+.PARAMETER BytesText
+	By default, values >1024 will have no unit text. However, if -BytesText is passed, the unit text for bytes will be "b" (or "bytes" if passed in tandem with -Long).
+
+.PARAMETER UpperCase
+	Aliased as "Caps" and "Capital". If Measure-Unit is called with -UpperCase, unit text will be in uppercase. E.g. "MB" instead of "mb".
+
+.PARAMETER TitleCase
+	Capitalizes the first letter of each unit. Overriden by -UpperCase if both are passed.
+
+.PARAMETER Long
+	Enables un-abbreviated unit text output, E.g. "10 kilobytes" instead of "10 kb".
+
+.PARAMETER FormatString
+	A number formatting string, such as "D", "X", or "P". See msdn.microsoft.com/en-us/library/26etazsy.aspx for more information and a list of valid format strings.
+	Note that if -FormatString is "X" the value will be rounded to the nearest integer.
+
+.PARAMETER PrefixString
+	A string to prefix the units with. If -FormatString is set to "X", -PrefixString will default to "0x"
+
+.COMPONENT
+	Measure-Unit
+
+.EXAMPLE
+	19999 | Format-Unit -Decimals 4 -Capital -Long
+	19.5303 KILOBYTES
+
+.EXAMPLE
+	Format-Unit 1000 -ExtraByteDigits -Decimals 1 -BytesText
+	1,000.0 b
+
+.EXAMPLE
+	Format-Unit 1024 -RoundDown -Long -TitleCase
+	1,024 Bytes
+
+.EXAMPLE
+	 @(1025, 9999, 108085) | Format-Unit -Decimals 4
+	105.5518 kb
+
+.EXAMPLE
+	Format-Unit @(5777, 233, 89999) -BytesText -FormatString "X" -NoSpace
+	0x6kb
+	0xE9b
+	0x58kb
+#>
 function Get-Size
 {
 	[CmdletBinding()]
@@ -355,7 +416,9 @@ function Get-Size
 
 			[Char]$FormatString = "N",
 
-			[String]$PrefixText = ""
+			[String]$PrefixText = "",
+
+			[Switch]$Raw
 		 )
 
 
@@ -379,59 +442,83 @@ function Get-Size
 	}
 
 	Process{
-		While($PathSpec.Count -eq 1 -xor $PathSpec[0].Count -eq 1)
+		While( ($PathSpec.Count -eq 1 -xor $PathSpec[0].Count -eq 1) -and $PathSpec.GetType().Name -eq "String" )
 		{
 			$PathSpec = $PathSpec[0]
 		}
 
 		ForEach($Path in $PathSpec)
 		{
+			#TODO unfuck duplicates
 			if( !(Test-Path $Path) )
 			{
 				Write-Warning "Nothing matches path ``$Path``"
 				continue
 			}
 
+			Write-Verbose "Searching path ``$Path``"
+
 			$Files.Add(
 				( Invoke-Expression ( "Get-ChildItem $Path -Recurse $(
 					If($Force) { `"-Force`" }
 					)" ) ) ) > $Null
+
+			Write-Verbose ($Files.name | Out-String)
+			
 			$Items.Add(
 				( $Files[-1] | Measure-Object -Property Length -Sum )
 				) > $Null
+			Write-Verbose "$($Items[-1].Count) items found matching ``$Path``:"
+
+			if( $Files[-1].Count -ne 0 )
+			{
+				$Files[-1] | Format-Table -HideTableHeaders -Property @{
+					Name = "Directory";
+					Width = 24;
+					Expression = {$_.Directory};
+					Alignment = "Right"
+				}, @{
+					Name = "Name";
+					Width = 48;
+					Expression = {$_.Name};
+					Alignment = "Left"
+				} | Out-String | Write-Verbose
+			}
+
 			$ItemCount += $Items[-1].Count
 		}
 	}
 
 	End{
-		#If($Items -eq $Null)
-		#{
-			#Write-Warning "No files found"
-		#}
+		If($Items.Count -eq 0)
+		{
+			Write-Warning "No files found."
+			$ItemCount = 0
+			$TotalAmount = 0
+			$Average = 0
+		}
+		Else
+		{
+			$TotalAmount = ($Items.Sum | Measure-Object -sum).Sum
+			$Average = $TotalAmount / $ItemCount
+			Write-Verbose "Average of $Average bytes / file"
+		}
 
-		$TotalAmount = ($Items.Sum | Measure-Object -sum).Sum
 		Write-Verbose "Total bytes: $TotalAmount"
 
 		Write-Verbose "The cumulative size of all $($ItemCount) file$(if($ItemCount -ne 1){'s'}) matching ``$(
 			$PathSpec -Join ("$([char]0x60), $([char]0x60)")
 		)``:"
 
-		#Write-Verbose (Invoke-Expression "((Get-ChildItem $PathSpec -recurse $(if( $Force ){`"-Force`"})))")
-		$Files | Format-Table -HideTableHeaders -Property @{
-			Name = "Directory";
-			Width = 24;
-			Expression = {$_.Directory};
-			Alignment = "Right"
-		}, @{
-			Name = "Name";
-			Width = 48;
-			Expression = {$_.Name};
-			Alignment = "Left"
-		} | Out-String | Write-Verbose
-
-		$Average = $TotalAmount / $ItemCount
 		Write-Verbose "(average of $(Invoke-Expression "Format-Unit $Average $FormatUnitOptions") / file)"
 
-		Write-Output (Invoke-Expression "Format-Unit $TotalAmount $FormatUnitOptions")
+		If( $Raw )
+		{
+			Write-Output $TotalAmount
+		}
+		Else
+		{
+			Write-Output (Invoke-Expression "Format-Unit $TotalAmount $FormatUnitOptions")
+		}
 	}
 }
