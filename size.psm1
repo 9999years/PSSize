@@ -249,9 +249,9 @@ function Format-Unit
 	Param(
 			[Parameter(
 				Position = 0,
+				Mandatory = $True,
 				ValueFromRemainingArguments = $True,
-				ValueFromPipeline = $True,
-				Mandatory = $True
+				ValueFromPipeline = $True
 				)
 			]
 			[UInt64[]]$Amounts,
@@ -331,7 +331,7 @@ function Get-Size
 				ValueFromPipeline = $True
 				)
 			]
-			[String[]]$PathSpec = @(".\"),
+			[System.Collections.ArrayList]$PathSpec = @(".\"),
 
 			[Int]$Decimals = 2,
 
@@ -360,32 +360,46 @@ function Get-Size
 
 
 	Begin{
-	$Items = New-Object System.Collections.ArrayList
-	$Files = New-Object System.Collections.ArrayList
-	[Int]$ItemCount = 0
+		$Items = New-Object System.Collections.ArrayList
+		$Files = New-Object System.Collections.ArrayList
+		[Int]$ItemCount = 0
 	}
 
 	Process{
-		ForEach($Path in [Array]$PathSpec)
+		While($PathSpec.Count -eq 1)
 		{
-			Write-Output ($Path)
+			$PathSpec = $PathSpec[0]
+		}
+
+		ForEach($Path in $PathSpec)
+		{
+			Write-Verbose "ForEach loop"
 			if( !(Test-Path $Path) )
 			{
-				Write-Warning "Nothing matches path $PathSpec."
-				continue 
+				Write-Warning "Nothing matches path ``$Path``"
+				continue
 			}
-			$Files.Add(
+
+			Write-Verbose ($Path | Out-String)
+
+			Write-Verbose $Files.Add(
 				( Invoke-Expression ( "Get-ChildItem $Path -Recurse $(
 					If($Force) { `"-Force`" }
-					)" ) ) ) > $Null
-			$Items.Add(
+					)" ) ) )
+			Write-Verbose $Items.Add(
 				( $Files[-1] | Measure-Object -Property Length -Sum )
-				)  > $Null
-			$ItemCount += $Items[-1].Count
+				)
+			Write-Verbose ($ItemCount += $Items[-1].Count)
 		}
 	}
 
 	End{
+		Write-Verbose "End block"
+		#If($Items -eq $Null)
+		#{
+			#Write-Warning "No files found"
+		#}
+
 		$Total = Invoke-Expression "Format-Unit $($Items.Sum) $(
 			if($Decimals -ne 2) { "-Decimals $Decimals " }
 			if($RoundDown) { "-RoundDown " }
