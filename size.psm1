@@ -1,3 +1,57 @@
+function Expand-Array
+{
+	[CmdletBinding()]
+	Param(
+		[Parameter(
+			ValueFromPipeline = $True
+			)]
+		$Array
+		)
+
+	Process {
+		While( ($Array.Count -eq 1 -xor $Array[0].Count -eq 1) -and $Array.GetType().Name -eq "String" )
+		{
+			$Array = $Array[0]
+		}
+		Write-Output $Array
+	}
+}
+
+function Expand-Together
+{
+	[CmdletBinding()]
+	Param(
+		[Parameter(
+			ValueFromPipeline = $True
+			)]
+		$Array
+		)
+
+	Begin {
+		$OutArray = New-Object System.Collections.ArrayList
+	}
+
+	Process {
+		$ExpandedArray = (Expand-Array $Array)
+		ForEach($Key in $ExpandedArray) {
+			If($Key.Count -ne 1)
+			{
+				Expand-Together $Key
+			}
+			Else
+			{
+				$OutArray.Add(
+					$Key
+					) > $Null
+			}
+		}
+	}
+
+	End {
+		Write-Output $OutArray
+	}
+}
+
 <#
 .SYNOPSIS
 	Gives the appropriate unit for any byte amount
@@ -442,14 +496,11 @@ function Get-Size
 	}
 
 	Process{
-		While( ($PathSpec.Count -eq 1 -xor $PathSpec[0].Count -eq 1) -and $PathSpec.GetType().Name -eq "String" )
-		{
-			$PathSpec = $PathSpec[0]
-		}
 
-		ForEach($Path in $PathSpec)
+		$ExpandedPathSpec = ($PathSpec | Expand-Array)
+
+		ForEach($Path in $ExpandedPathSpec)
 		{
-			#TODO unfuck duplicates
 			if( !(Test-Path $Path) )
 			{
 				Write-Warning "Nothing matches path ``$Path``"
@@ -459,38 +510,39 @@ function Get-Size
 			Write-Verbose "Searching path ``$Path``"
 
 			$Files.Add(
-				( Invoke-Expression ( "Get-ChildItem $Path -Recurse $(
+				( (Invoke-Expression ( "Get-ChildItem $Path -Recurse $(
 					If($Force) { `"-Force`" }
-					)" ) ) ) > $Null
+					)" ) ) ) ) > $Null
 
-			Write-Verbose ($Files.name | Out-String)
+			#Write-Verbose ($Files.name | Out-String)
 			
-			$Items.Add(
-				( $Files[-1] | Measure-Object -Property Length -Sum )
-				) > $Null
-			Write-Verbose "$($Items[-1].Count) items found matching ``$Path``:"
+			#$Items.Add(
+				#(( $Files[-1] | Measure-Object -Property Length -Sum ) | Expand-Together)
+				#) > $Null
+			#Write-Verbose "$($Items[-1].Count) items found matching ``$Path``:"
 
-			if( $Files[-1].Count -ne 0 )
-			{
-				$Files[-1] | Format-Table -HideTableHeaders -Property @{
-					Name = "Directory";
-					Width = 24;
-					Expression = {$_.Directory};
-					Alignment = "Right"
-				}, @{
-					Name = "Name";
-					Width = 48;
-					Expression = {$_.Name};
-					Alignment = "Left"
-				} | Out-String | Write-Verbose
-			}
+			#if( $Files[-1].Count -ne 0 )
+			#{
+				#$Files[-1] | Format-Table -HideTableHeaders -Property @{
+					#Name = "Directory";
+					#Width = 24;
+					#Expression = {$_.Directory};
+					#Alignment = "Right"
+				#}, @{
+					#Name = "Name";
+					#Width = 48;
+					#Expression = {$_.Name};
+					#Alignment = "Left"
+				#} | Out-String | Write-Verbose
+			#}
 
-			$ItemCount += $Items[-1].Count
+			#$ItemCount += $Items[-1].Count
 		}
 	}
 
 	End{
-		If($Items.Count -eq 0)
+		$NewFiles = (Expand-Together $Files) | Select -Unique
+		If($NewFiles.Count -eq 0)
 		{
 			Write-Warning "No files found."
 			$ItemCount = 0
@@ -499,16 +551,32 @@ function Get-Size
 		}
 		Else
 		{
-			$TotalAmount = ($Items.Sum | Measure-Object -sum).Sum
-			$Average = $TotalAmount / $ItemCount
+			Write-Verbose "$($NewFiles.Count) files found, including $($Files.Count - $FilesNew.Count) duplicates:"
+			"`n`r" + ($NewFiles | Format-Table -HideTableHeaders -Property @{
+				Name = "Directory";
+				#Width = 24;
+				Expression = {$_.Directory};
+				Alignment = "Right"
+			}, @{
+				Name = "Name";
+				#Width = 48;
+				Expression = {$_.Name};
+				Alignment = "Left"
+			} | Out-String).Trim() | Write-Verbose
+			#Show-Variable $NewFiles | Write-Verbose
+			#Show-Variable ($NewFiles | Measure-Object -Property Length -Sum)
+			$TotalAmount = ($NewFiles | Measure-Object -Property Length -Sum).Sum
+			$Average = $TotalAmount / $NewFiles.Count
 			Write-Verbose "Average of $Average bytes / file"
 		}
 
+		#Show-Variable $NewFiles | Write-Output
+
 		Write-Verbose "Total bytes: $TotalAmount"
 
-		Write-Verbose "The cumulative size of all $($ItemCount) file$(if($ItemCount -ne 1){'s'}) matching ``$(
-			$PathSpec -Join ("$([char]0x60), $([char]0x60)")
-		)``:"
+		#Write-Verbose "The cumulative size of all $($ItemCount) file$(if($ItemCount -ne 1){'s'}) matching ``$(
+			#$PathSpec -Join ("$([char]0x60), $([char]0x60)")
+		#)``:"
 
 		Write-Verbose "(average of $(Invoke-Expression "Format-Unit $Average $FormatUnitOptions") / file)"
 
