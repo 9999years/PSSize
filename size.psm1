@@ -9,6 +9,10 @@ function Expand-Array
 		)
 
 	Process {
+		If( $Array -eq $Null )
+		{
+			Return
+		}
 		While( ($Array.Count -eq 1 -xor $Array[0].Count -eq 1) -and $Array.GetType().Name -eq "String" )
 		{
 			$Array = $Array[0]
@@ -71,16 +75,28 @@ function Test-FileInfoEquality
 			ValueFromPipeline = $True,
 			Position = 0
 			)]
-		[System.IO.FileInfo]$First,
+		$First,
 
 		[Parameter(
 			Position = 1
 			)]
-		[System.IO.FileInfo]$Second
+		$Second
 		)
 	
 	Process {
-		If( $First.FullName -eq $Second.FullName )
+		If( $First -eq $Null -or
+			$Second -eq $Null )
+		{
+			Write-Output $False
+			#lol im sure this is fine
+		}
+		#If($First)
+		ElseIf( $First -is [System.IO.DirectoryInfo] -or
+				$Second -is [System.IO.DirectoryInfo] )
+		{
+			Write-Output $False
+		}
+		ElseIf( $First.FullName -eq $Second.FullName )
 		{
 			Write-Output $True
 		}
@@ -88,6 +104,30 @@ function Test-FileInfoEquality
 		{
 			Write-Output $False
 		}
+	}
+}
+
+function Remove-DirectoryEntries
+{
+	[CmdletBinding()]
+	Param(
+		[Parameter(
+			ValueFromPipeline = $True,
+			ValueFromRemainingArguments = $True
+			)]
+		[System.IO.FileSystemInfo[]]$Array
+	)
+
+	Process {
+		$ProcessedArray = New-Object System.Collections.ArrayList
+		ForEach($File in $Array)
+		{
+			If($File.GetType().Name -ne "DirectoryInfo")
+			{
+				$ProcessedArray.Add($File) > $Null
+			}
+		}
+		Write-Output $ProcessedArray
 	}
 }
 
@@ -111,14 +151,7 @@ function Remove-Duplicates
 
 	Process {
 
-		$ProcessedArray = New-Object System.Collections.ArrayList
-		ForEach($File in $Array)
-		{
-			If($File.GetType().Name -ne "DirectoryInfo")
-			{
-				$ProcessedArray.Add($File) > $Null
-			}
-		}
+		$ProcessedArray = (Remove-DirectoryEntries $Array)
 
 		$OutArray = New-Object System.Collections.ArrayList
 		For($i = 0; $i -lt $ProcessedArray.Count; $i++)
@@ -527,7 +560,7 @@ function Get-Size
 				ValueFromPipeline = $True
 				)
 			]
-			[System.Collections.ArrayList]$PathSpec = @(".\"),
+			$PathSpec = @(".\"),
 
 			[Int]$Decimals = 2,
 
@@ -558,9 +591,12 @@ function Get-Size
 
 
 	Begin{
-		$Items = New-Object System.Collections.ArrayList
 		$Files = New-Object System.Collections.ArrayList
-		[Int]$ItemCount = 0
+		$Directories = New-Object System.Collections.ArrayList
+		If($PathSpec -isnot [String])
+		{
+			$PathSpec = ($PathSpec | Expand-Together | Sort-Object | Select-Object -Unique)
+		}
 
 		$FormatUnitOptions = "$(
 			if($Decimals -ne 2) { "-Decimals $Decimals " }
@@ -591,45 +627,52 @@ function Get-Size
 			Write-Verbose "Searching path ``$Path``"
 
 			$Files.Add(
-				( (Invoke-Expression ( "Get-ChildItem $Path -Recurse $(
+				( (Invoke-Expression ( "Get-ChildItem $Path -File -Recurse $(
 					If($Force) { `"-Force`" }
-					)" ) ) ) ) > $Null
+				)" ) ) ) ) > $Null
 
+			$Directories.Add(
+				( (Invoke-Expression ( "Get-ChildItem $Path -Directory -Recurse $(
+					If($Force) { `"-Force`" }
+				)" ) ) ) ) > $Null
 		}
 	}
 
 	End{
 		$NewFiles = New-Object System.Collections.ArrayList
 		$Files = (Expand-Together $Files | Sort-Object)
-
+		$Directories = (Expand-Together $Directories | Sort-Object)
+		#"`n`r" + ($Directories | Format-Table -HideTableHeaders -Property FullName -Auto | Out-String -Width ((Get-Host).UI.RawUI.WindowSize.Width-2)).Trim() | Write-Verbose
 		$NewFiles = (Remove-Duplicates $Files)
+
+
 		If($NewFiles.Count -eq 0)
 		{
 			Write-Warning "No files found."
 			$ItemCount = 0
-			$TotalAmount = 0
+			$FileStats = 0
 			$Average = 0
 		}
 		Else
 		{
 			$Duplicates = $Files.Count - $NewFiles.Count
-			Write-Verbose "$($NewFiles.Count) files found$(If($Duplicates) { ", not including $Duplicates extra duplicate$( If($Duplicates -gt 1) { "s" } )"}):"
+			Write-Verbose "$($NewFiles.Count) files found$(If($Duplicates) { ", not including $Duplicates extra duplicate$( If($Duplicates -gt 1) { "s" } ) that occured in more than one path"}):"
 			"`n`r" + ($NewFiles | Format-Table -HideTableHeaders -Property FullName -Auto | Out-String -Width ((Get-Host).UI.RawUI.WindowSize.Width-2)).Trim() | Write-Verbose
-			$TotalAmount = ($NewFiles | Measure-Object -Property Length -Sum).Sum
-			$Average = $TotalAmount / $NewFiles.Count
+			$FileStats = ($NewFiles | Measure-Object -Property Length -Sum -Average -Minimum -Maximum)
 		}
 
-		Write-Verbose "Total bytes: $TotalAmount"
+		Write-Verbose "Total bytes: $($FileStats.Sum)"
 
-		Write-Verbose "(average of $(Invoke-Expression "Format-Unit $Average $FormatUnitOptions") / file)"
+		#Sorry about this line:
+		"`n`rAvg  : $(Invoke-Expression "Format-Unit $($FileStats.Average) $FormatUnitOptions")`n`rSum  : $(Invoke-Expression "Format-Unit $($FileStats.Sum) $FormatUnitOptions")`n`rMax  : $(Invoke-Expression "Format-Unit $($FileStats.Maximum) $FormatUnitOptions") `n`rMin  : $(Invoke-Expression "Format-Unit $($FileStats.Minimum) $FormatUnitOptions")" | Write-Verbose
 
 		If( $Raw )
 		{
-			Write-Output $TotalAmount
+			Write-Output $FileStats.Sum
 		}
 		Else
 		{
-			Write-Output (Invoke-Expression "Format-Unit $TotalAmount $FormatUnitOptions")
+			Write-Output (Invoke-Expression "Format-Unit $($FileStats.Sum) $FormatUnitOptions")
 		}
 	}
 }
