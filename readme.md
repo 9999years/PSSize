@@ -3,6 +3,8 @@
 A size-summing PowerShell cmdlet to get the cumulative size of files or directories.
 Clone the repository and `Import-Module` the directory.
 
+I suggest adding `New-Alias size Get-Size` to your PowerShell profile as well.
+
 Examples:
 ```
 PS>Get-Size * -Verbose
@@ -31,3 +33,8 @@ PS>Get-Size -Force -Decimals 5
 PS>Get-Size ..\posh-git\,..\var-dump\
 89.82 kb
 ```
+
+TODO:
+* Add a median file-size for the verbose output.
+* Write better documentation.
+* Restrict exported functions to just Get-Size.
